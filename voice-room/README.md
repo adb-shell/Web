@@ -8,7 +8,7 @@
 
 应用容器在宿主机 `127.0.0.1:3080` 提供 HTTP。访客通过宝塔 Nginx 提供的 HTTPS 地址使用麦克风。按服务器的访问地址选择教程。
 
-- **只有固定公网 IPv4**。在项目目录下载 `ip-https.sh`，脚本会为 IP 申请证书、配置反向代理并安装每天检查两次的续期任务。[公网 IP 部署](../docs/local-deployment/01-公网IP部署.md)
+- **只有固定公网 IPv4**。在宝塔终端运行公网 IP 教程第 4 步的完整命令。它会创建 `/www/voice-room/`，将脚本保存为 `ip-https.sh` 并执行，为 IP 申请证书、配置反向代理和自动续期。[公网 IP 部署](../docs/local-deployment/01-公网IP部署.md)
 - **有域名**。将 A 记录指向服务器，在宝塔「网站」申请域名证书并设置反向代理。[域名部署](../docs/local-deployment/03-域名部署.md)
 
 `ip-https.sh` 适用于 **Nginx 安装在宿主机的标准宝塔路径**。它使用 `/www/server/nginx/sbin/nginx`，在 `/www/server/panel/vhost/nginx/` 新增本项目的 HTTP 和 HTTPS 配置，检查语法并平滑重载。HTTP-01 验证沿用运行中的 80 端口。首次搭建时若 443 已被其他站点占用，可使用单独的空闲端口，例如 8443，并在防火墙放行对应的端口。
