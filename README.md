@@ -21,4 +21,4 @@ docker run -d --name voice-room --restart unless-stopped --env-file .env \
 
 发布到 Docker Hub 时，在仓库的 Actions 设置中添加变量 `DOCKERHUB_REPOSITORY`（公开仓库全名，例如 `your-id/voice-room`）和密钥 `DOCKERHUB_TOKEN`（具有推送权限的 Docker Hub 访问令牌）。组织仓库另设变量 `DOCKERHUB_USERNAME` 指定登录账号。工作流从已发布的 Release 下载镜像、校验并推送版本标签，再验证匿名拉取。当前最新 Release 同时发布 `latest`。
 
-可以在 Actions 中手动选择原版本标签重新运行发布流程。已有的正式 Release 会复用原镜像。
+可以在 Actions 的 “Publish voice room” 中点击 “Run workflow”，选择 `main` 并填写原版本标签。已有的正式 Release 会复用原镜像。

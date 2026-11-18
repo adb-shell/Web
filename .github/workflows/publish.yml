@@ -4,12 +4,17 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag, for example v0.3.1
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -19,7 +24,7 @@ jobs:
     permissions:
       contents: write
     env:
-      TAG: ${{ github.ref_name }}
+      TAG: ${{ inputs.tag || github.ref_name }}
       GH_TOKEN: ${{ github.token }}
     outputs:
       version: ${{ steps.version.outputs.value }}
@@ -28,10 +33,11 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
       - name: Check release version
         id: version
         run: |
-          [[ "$GITHUB_REF_TYPE" == tag && "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Select a tag such as v0.3.1"; exit 1; }
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Select a tag such as v0.3.1"; exit 1; }
           version=$(jq -r .version voice-room/package.json)
           [[ "$TAG" == "v$version" ]]
           echo "value=$version" >> "$GITHUB_OUTPUT"
@@ -65,7 +71,12 @@ jobs:
           cid=$(docker run --detach --publish 127.0.0.1::3080 "$image")
           trap 'docker rm -f "$cid" >/dev/null' EXIT
           addr=$(docker port "$cid" 3080/tcp)
-          curl -fsS --retry 8 --retry-connrefused --retry-delay 1 "http://$addr/api/health" | jq -e '.configured == false'
+          for attempt in {1..30}; do
+            if curl -fsS --max-time 2 "http://$addr/api/health" -o "$RUNNER_TEMP/health.json"; then break; fi
+            if [[ "$attempt" == 30 ]]; then docker logs "$cid"; exit 1; fi
+            sleep 1
+          done
+          jq -e '.configured == false' "$RUNNER_TEMP/health.json"
           curl -fsS "http://$addr/api/rooms" | jq -e '. == []'
           docker exec "$cid" test ! -e /app/.env
           mkdir dist
@@ -92,7 +103,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      TAG: ${{ github.ref_name }}
+      TAG: ${{ inputs.tag || github.ref_name }}
       VERSION: ${{ needs.release.outputs.version }}
       COMMIT: ${{ needs.release.outputs.commit }}
       IMAGE: ${{ vars.DOCKERHUB_REPOSITORY }}
