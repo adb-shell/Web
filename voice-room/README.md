@@ -4,22 +4,12 @@
 
 ## Ubuntu 和宝塔部署
 
-当前站点使用标准 HTTPS 端口 443。应用容器在宿主机 `127.0.0.1:3080` 提供 HTTP，由现有宝塔 Nginx 转发。公网 IP 证书由 Let's Encrypt 签发，部署脚本安装每天检查两次的续期任务。[IP 证书官方说明](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)
+在 Ubuntu x86_64 服务器使用 Docker Hub 镜像部署时，将宝塔编排模板保存为 `/www/voice-room/compose.yaml`。在 `services.voice.environment` 下填写同一个项目的数字 AppID（`ZEGO_APP_ID`）和 32 位 ServerSecret（`ZEGO_SERVER_SECRET`），再从宝塔「Docker → 容器编排」导入该文件。填好凭据的文件仅限管理员读取。[宝塔编排模板](deploy/compose.bt.yaml) · [编排填写、更新与验证](../docs/local-deployment/02-Docker编排模板.md)
 
-1. 在 ZEGO 控制台打开已创建项目的“项目信息”，准备 **AppID** 和 **ServerSecret**。新项目默认已开通实时音视频。ServerSecret 只在服务器终端输入。[项目信息](https://doc-zh.zego.im/console/project-info) · [实时音视频服务](https://doc-zh.zego.im/console/service-configuration/rtc)
-2. 在云安全组和 Ubuntu／宝塔防火墙允许入站 **TCP 80** 和 **TCP 443**。80 用于证书签发与续期，443 用于通话网页。3080 保持本机访问。使用固定或稳定的公网 IPv4。
-3. 首次搭建时，把发布包上传至服务器的 `/www/wwwroot`，在宝塔终端执行以下命令。已有本项目 HTTPS 配置的服务器，升级时只需解包并运行 `deploy/start.sh`。
+应用容器在宿主机 `127.0.0.1:3080` 提供 HTTP。访客通过宝塔 Nginx 提供的 HTTPS 地址使用麦克风。按服务器的访问地址选择教程。
 
-```bash
-cd /www/wwwroot
-tar -xzf shengjian-voice-0.3.1.tar.gz
-cd voice-room
-sudo bash deploy/start.sh
-read -rp '服务器公网 IPv4: ' VOICE_IP
-sudo bash deploy/ip-https.sh "$VOICE_IP" 443
-```
-
-首次运行 `start.sh` 会隐藏输入 ServerSecret，把配置写入仅管理员可读的 `.env`。升级会沿用原配置，保留旧版配置可让有效期内的原邀请链接继续使用。服务器需能拉取 Node、Certbot 官方 Docker 镜像及 npm 依赖。
+- **只有固定公网 IPv4**。在项目目录下载 `ip-https.sh`，脚本会为 IP 申请证书、配置反向代理并安装每天检查两次的续期任务。[公网 IP 部署](../docs/local-deployment/01-公网IP部署.md)
+- **有域名**。将 A 记录指向服务器，在宝塔「网站」申请域名证书并设置反向代理。[域名部署](../docs/local-deployment/03-域名部署.md)
 
 `ip-https.sh` 适用于 **Nginx 安装在宿主机的标准宝塔路径**。它使用 `/www/server/nginx/sbin/nginx`，在 `/www/server/panel/vhost/nginx/` 新增本项目的 HTTP 和 HTTPS 配置，检查语法并平滑重载。HTTP-01 验证沿用运行中的 80 端口。首次搭建时若 443 已被其他站点占用，可使用单独的空闲端口，例如 8443，并在防火墙放行对应的端口。
 
@@ -36,15 +26,19 @@ sudo bash deploy/ip-https.sh "$VOICE_IP" 443
 ## 检查运行状态
 
 ```bash
-cd /www/wwwroot/voice-room
-sudo docker compose ps
+sudo docker ps --filter name=voice-room
 curl -fsS http://127.0.0.1:3080/api/health
-sudo docker compose logs --tail 50
+sudo docker logs --tail 50 voice-room
+```
+
+通过 IP 脚本签发的证书，可用以下命令查看续期计划与最近一次执行结果。
+
+```bash
 systemctl list-timers zego-voice-renew.timer
 sudo journalctl -u zego-voice-renew.service -n 30
 ```
 
-`configured: true` 表示应用已读到格式有效的服务配置。实际 AppID 和密钥是否属于同一个可用的 ZEGO 项目，以两端成功进房和通话为准。若建房后登录失败，优先核对 AppID、ServerSecret 和服务状态。使用项目指定接入地址时，可在 `.env` 增加 `ZEGO_SERVER` 后重新执行 `start.sh`。
+`configured: true` 表示应用已读到格式有效的服务配置。实际 AppID 和密钥是否属于同一个可用的 ZEGO 项目，以两端成功进房和通话为准。若建房后登录失败，优先核对 AppID、ServerSecret 和服务状态。使用项目指定接入地址时，可在编排的 `environment` 下增加 `ZEGO_SERVER`，然后在宝塔重新部署并重建容器。
 
 证书签发失败时，先从外网确认 80 能直达此 IPv4，检查云安全组、NAT 和宝塔防火墙。网络修复后可重跑 `ip-https.sh`。更换公网 IP 后需要为新地址签发证书、更新 Nginx 并重新分享链接。
 
@@ -65,4 +59,6 @@ location / {
 
 ## 本机开发
 
-使用 Node 22.13+ 和 npm，在本目录运行 `npm ci --ignore-scripts`。复制 `.env.example` 为 `.env` 并填写配置，再运行 `npm start`，从本机打开 `http://localhost:3080`。运行 `npm test` 可验证并行建房、重启持久化、列表推送、旧邀请兼容、语音凭证签发和续期。前端依赖由同一服务提供。
+使用 Node 22.13+ 和 npm，在本目录运行 `npm ci --ignore-scripts`。复制 `.env.example` 为 `.env` 并填写配置，再运行 `npm start`，从本机打开 `http://localhost:3080`。本目录下的 `compose.yaml` 和 `deploy/start.sh` 用于从源码构建。在宝塔部署公开镜像时，使用上文的宝塔编排模板。
+
+运行 `npm test` 可验证并行建房、重启持久化、列表推送、旧邀请兼容、语音凭证签发和续期。前端依赖由同一服务提供。查阅语音 SDK 接口和双端通话排查方法，可参考[网页语音接入笔记](../docs/zego-web-voice.md)。

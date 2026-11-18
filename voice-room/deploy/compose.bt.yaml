@@ -1,0 +1,29 @@
+services:
+  voice:
+    image: tunneluser/voice-room:0.3.1
+    container_name: voice-room
+    restart: unless-stopped
+    environment:
+      ZEGO_APP_ID: "替换为数字AppID"
+      ZEGO_SERVER_SECRET: "替换为同一项目的32位ServerSecret"
+    ports:
+      - "127.0.0.1:3080:3080"
+    volumes:
+      - rooms:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3080/api/health')
+          .then(r => r.json()).then(s => process.exit(s.configured ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  rooms:
+    name: voice-room_rooms

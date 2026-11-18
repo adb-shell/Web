@@ -1,1 +1,6 @@
 /shengjian-voice-*.tar.gz
+
+# Private copies of the deployment configuration
+/compose.yaml
+.env
+voice.env
