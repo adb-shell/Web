@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f5f5ef">
+  <title>声间 · 语音房间</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/vendor/rtc-3.13.0.js"></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header><div class="frame bar"><a class="brand" href="/" aria-label="声间首页"><i class="mark" aria-hidden="true"><b></b><b></b><b></b><b></b><b></b></i>声间</a>
+    <span class="connection"><i id="lamp"></i><span id="connection">未连接</span></span></div></header>
+  <main class="frame">
+    <div class="intro"><h1 id="pageTitle">语音大厅</h1><p id="lead">创建自己的语音房间，或输入朋友的房间号加入通话。</p></div>
+    <p id="notice" role="status" aria-live="polite" hidden></p>
+    <div id="lobby">
+      <div class="columns lobby-actions">
+        <section class="control" aria-labelledby="createTitle">
+          <div class="panel-head"><span class="head-icon" aria-hidden="true">＋</span><h2 id="createTitle">创建房间</h2></div>
+          <p class="description">建好后，分享房间号或邀请链接给朋友。</p>
+          <form id="createForm">
+            <label for="newNumber">房间号</label><output id="newNumber">创建后自动分配</output>
+            <button class="primary" id="createRoom" type="submit">创建并加入 <span aria-hidden="true">→</span></button>
+          </form>
+        </section>
+        <section class="control" aria-labelledby="numberTitle">
+          <div class="panel-head"><span class="head-icon" aria-hidden="true">↗</span><h2 id="numberTitle">加入房间</h2></div>
+          <p class="description">输入朋友的房间号，或从下方列表选择房间。</p>
+          <form id="numberForm">
+            <label for="roomNumber">房间号</label><input id="roomNumber" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 位数字" required>
+            <button class="primary" id="joinByNumber" type="submit">加入房间 <span aria-hidden="true">→</span></button>
+          </form>
+        </section>
+      </div>
+      <section class="control directory" aria-labelledby="directoryTitle">
+        <div class="directory-head"><h2 id="directoryTitle">房间列表</h2><span id="syncState" role="status">正在同步</span></div>
+        <p class="description">房间自创建起保留 12 小时，期间可以重复加入。</p>
+        <ul id="roomRows" aria-label="可加入的房间"></ul>
+        <p id="emptyRooms" hidden>暂时没有房间。你可以创建第一个房间。</p>
+      </section>
+    </div>
+    <div id="roomView" class="columns" hidden>
+      <section class="control" aria-labelledby="formTitle">
+        <div class="panel-head"><span class="head-icon" aria-hidden="true">⌁</span><h2 id="formTitle">加入房间</h2></div>
+        <div id="roomBadge" hidden><span>房间号</span><strong id="shownNumber"></strong></div>
+        <form id="joinForm">
+          <button class="primary" id="join" type="submit">加入语音房间 <span aria-hidden="true">→</span></button>
+        </form>
+        <div id="live" hidden>
+          <div class="member-label"><h3>房间成员</h3><span id="memberTotal">0 人</span></div>
+          <ul id="members"></ul>
+          <div class="actions"><button class="secondary" type="button" id="mute" aria-pressed="false">麦克风静音</button><button class="hangup" type="button" id="leave">离开房间</button></div>
+        </div>
+        <button class="secondary full" type="button" id="copy" hidden>复制邀请链接</button>
+        <div id="manualCopy" hidden><label for="inviteLink">邀请链接</label><input id="inviteLink" readonly></div>
+        <button class="secondary full" type="button" id="resume" hidden>点击恢复对方声音</button>
+        <a class="back-link" href="/" id="backLobby">返回大厅</a>
+        <p class="privacy"><i aria-hidden="true">◉</i> 仅使用麦克风</p>
+      </section>
+      <section class="monitor" aria-label="音频监测">
+        <div class="monitor-head"><h2><span class="signal" aria-hidden="true">▥</span> 音频监测</h2><span id="monitorTag">待接入</span></div>
+        <div class="scope"><canvas aria-hidden="true" id="scope"></canvas>
+          <div class="mic-medallion" aria-hidden="true"><span class="mic-body"></span><span class="mic-cradle"></span><span class="mic-base"></span></div>
+        </div>
+        <div class="meters"><div><span>本机麦克风</span><strong id="micState">未开启</strong></div>
+          <div><span>在房时长</span><strong class="clock" id="duration">00:00</strong></div></div>
+      </section>
+    </div>
+  </main>
+  <footer class="frame"><span><b class="mini-wave" aria-hidden="true">ııIıı</b> 实时语音</span><span>声间 · 网页测试版</span></footer>
+  <div id="audioHost" hidden></div>
+</body>
+</html>

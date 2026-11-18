@@ -1,0 +1,17 @@
+services:
+  voice:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - rooms:/app/data
+    ports:
+      - "127.0.0.1:3080:3080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3080/api/health').then(r=>r.json()).then(v=>process.exit(v.configured?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  rooms:

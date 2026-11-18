@@ -1,0 +1,127 @@
+name: Publish voice room
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Check release version
+        id: version
+        run: |
+          [[ "$GITHUB_REF_TYPE" == tag && "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Select a tag such as v0.3.1"; exit 1; }
+          version=$(jq -r .version voice-room/package.json)
+          [[ "$TAG" == "v$version" ]]
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          draft=$(gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null || true)
+          if [[ "$draft" == false ]]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        if: steps.version.outputs.published != 'true'
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Test application
+        if: steps.version.outputs.published != 'true'
+        working-directory: voice-room
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm test
+      - name: Build and smoke-test the image
+        if: steps.version.outputs.published != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          COMMIT: ${{ steps.version.outputs.commit }}
+        run: |
+          image="shengjian-voice:$VERSION"
+          docker build --platform linux/amd64 --tag "$image" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --label "org.opencontainers.image.revision=$COMMIT" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" voice-room
+          cid=$(docker run --detach --publish 127.0.0.1::3080 "$image")
+          trap 'docker rm -f "$cid" >/dev/null' EXIT
+          addr=$(docker port "$cid" 3080/tcp)
+          curl -fsS --retry 8 --retry-connrefused --retry-delay 1 "http://$addr/api/health" | jq -e '.configured == false'
+          curl -fsS "http://$addr/api/rooms" | jq -e '. == []'
+          docker exec "$cid" test ! -e /app/.env
+          mkdir dist
+          docker save "$image" | gzip -1 > "dist/shengjian-voice-$VERSION-linux-amd64.tar.gz"
+          git archive --format=tar HEAD voice-room | gzip -n > "dist/shengjian-voice-$VERSION.tar.gz"
+          (cd dist && sha256sum *.tar.gz > SHA256SUMS)
+      - name: Publish GitHub Release
+        if: steps.version.outputs.published != 'true'
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --draft --title "声间 $TAG" \
+              --notes "Linux amd64 镜像包可用 docker load 导入。源码部署包及 SHA256SUMS 随附。"
+          fi
+          gh release upload "$TAG" dist/* --clobber
+          gh release edit "$TAG" --draft=false
+      - name: Record release URL
+        run: gh release view "$TAG" --json url --jq '.url' >> "$GITHUB_STEP_SUMMARY"
+
+  dockerhub:
+    needs: release
+    if: vars.DOCKERHUB_REPOSITORY != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.release.outputs.version }}
+      COMMIT: ${{ needs.release.outputs.commit }}
+      IMAGE: ${{ vars.DOCKERHUB_REPOSITORY }}
+    steps:
+      - name: Load the published release image
+        run: |
+          [[ "$IMAGE" =~ ^[a-z0-9][a-z0-9_-]*/[a-z0-9][a-z0-9._-]*$ ]]
+          gh release download "$TAG" --pattern SHA256SUMS --pattern '*.tar.gz'
+          sha256sum --check --strict SHA256SUMS
+          docker load --input "shengjian-voice-$VERSION-linux-amd64.tar.gz"
+          image="shengjian-voice:$VERSION"
+          [[ "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" == "$COMMIT" ]]
+          docker tag "$image" "$IMAGE:$VERSION"
+      - name: Publish to Docker Hub
+        env:
+          HUB_USER: ${{ vars.DOCKERHUB_USERNAME }}
+          HUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          : "${HUB_TOKEN:?Set the DOCKERHUB_TOKEN repository secret}"
+          printf '%s' "$HUB_TOKEN" | docker login --username "${HUB_USER:-${IMAGE%%/*}}" --password-stdin
+          docker push "$IMAGE:$VERSION"
+          if [[ "$(gh api "repos/$GH_REPO/releases/latest" --jq '.tag_name')" == "$TAG" ]]; then
+            docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
+            docker push "$IMAGE:latest"
+          fi
+      - name: Verify anonymous pull
+        run: |
+          expected=$(docker image inspect --format '{{.Id}}' "$IMAGE:$VERSION")
+          export DOCKER_CONFIG="$(mktemp -d)"
+          docker pull --platform linux/amd64 "$IMAGE:$VERSION"
+          [[ "$(docker image inspect --format '{{.Id}}' "$IMAGE:$VERSION")" == "$expected" ]]
+          echo "https://hub.docker.com/r/$IMAGE" >> "$GITHUB_STEP_SUMMARY"
